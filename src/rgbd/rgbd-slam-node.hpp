@@ -9,9 +9,9 @@
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/image.hpp"
 
-#include "message_filters/subscriber.h"
-#include "message_filters/synchronizer.h"
-#include "message_filters/sync_policies/approximate_time.h"
+#include <message_filters/subscriber.h>
+#include <message_filters/time_synchronizer.h>
+#include <message_filters/sync_policies/approximate_time.h>
 
 #include <cv_bridge/cv_bridge.h>
 
@@ -31,19 +31,33 @@ public:
 
 private:
     using ImageMsg = sensor_msgs::msg::Image;
-    typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::msg::Image, sensor_msgs::msg::Image> approximate_sync_policy;
+    void GrabImageRGB(const ImageMsg::SharedPtr msgRGB);
+    void GrabImageD(const ImageMsg::SharedPtr msgD);
+    cv::Mat GetRGBImage(const ImageMsg::SharedPtr msg);
+    cv::Mat GetDImage(const ImageMsg::SharedPtr msg);
+    void SyncTwoImages();
 
-    void GrabRGBD(const sensor_msgs::msg::Image::SharedPtr msgRGB, const sensor_msgs::msg::Image::SharedPtr msgD);
+    rclcpp::Subscription<ImageMsg>::SharedPtr subRGB;
+    rclcpp::Subscription<ImageMsg>::SharedPtr subD;
 
     ORB_SLAM3::System* m_SLAM;
+    std::thread* syncThread;
 
-    cv_bridge::CvImageConstPtr cv_ptrRGB;
-    cv_bridge::CvImageConstPtr cv_ptrD;
+    queue<ImageMsg::SharedPtr> imgRGBBuf, imgDBuf;
+    std::mutex bufMutexRGB, bufMutexD;
+    // typedef message_filters::sync_policies::ApproximateTime<ImageMsg, ImageMsg> approximate_sync_policy;
 
-    std::shared_ptr<message_filters::Subscriber<sensor_msgs::msg::Image> > rgb_sub;
-    std::shared_ptr<message_filters::Subscriber<sensor_msgs::msg::Image> > depth_sub;
+    // void GrabRGBD(const ImageMsg::SharedPtr msgRGB, const ImageMsg::SharedPtr msgD);
 
-    std::shared_ptr<message_filters::Synchronizer<approximate_sync_policy> > syncApproximate;
+    // ORB_SLAM3::System* m_SLAM;
+
+    // cv_bridge::CvImageConstPtr cv_ptrRGB;
+    // cv_bridge::CvImageConstPtr cv_ptrD;
+
+    // std::shared_ptr<message_filters::Subscriber<ImageMsg> > rgb_sub;
+    // std::shared_ptr<message_filters::Subscriber<ImageMsg> > depth_sub;
+
+    // std::shared_ptr<message_filters::Synchronizer<approximate_sync_policy> > syncApproximate;
 };
 
 #endif

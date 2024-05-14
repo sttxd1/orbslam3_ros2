@@ -1,0 +1,21 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "/usr/include/**",
+                "/home/peterstone/orbslam_ws/**",
+                "/home/peterstone/orbslam_ws/colcon_ws/src/**",
+                "/home/peterstone/orbslam_ws/colcon_ws/src/orbslam3_ros2/include/**",
+                "/opt/ros/humble/include/**"
+            ],
+            "defines": [],
+            "compilerPath": "/usr/bin/g++",
+            "cStandard": "c17",
+            "cppStandard": "gnu++23",
+            "intelliSenseMode": "linux-gcc-x64"
+        }
+    ],
+    "version": 4
+}

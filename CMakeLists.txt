@@ -18,6 +18,8 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(nav_msgs REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(message_filters REQUIRED)
 find_package(Sophus REQUIRED)
@@ -39,7 +41,13 @@ add_executable(mono
   src/monocular/mono.cpp
   src/monocular/monocular-slam-node.cpp
 )
-ament_target_dependencies(mono rclcpp sensor_msgs cv_bridge ORB_SLAM3 Pangolin OpenCV)
+ament_target_dependencies(mono rclcpp sensor_msgs cv_bridge ORB_SLAM3 Pangolin OpenCV nav_msgs tf2_ros)
+
+add_executable(mono-inertial
+  src/mono-inertial/mono-inertial.cpp
+  src/mono-inertial/mono-inertial-node.cpp
+)
+ament_target_dependencies(mono-inertial rclcpp sensor_msgs cv_bridge ORB_SLAM3 Pangolin OpenCV)
 
 add_executable(rgbd
   src/rgbd/rgbd.cpp
@@ -47,19 +55,32 @@ add_executable(rgbd
 )
 ament_target_dependencies(rgbd rclcpp sensor_msgs cv_bridge message_filters ORB_SLAM3 Pangolin OpenCV)
 
+add_executable(rgbd-inertial
+  src/rgbd-inertial/rgbd-inertial.cpp
+  src/rgbd-inertial/rgbd-inertial-slam-node.cpp
+)
+ament_target_dependencies(rgbd-inertial rclcpp sensor_msgs cv_bridge message_filters ORB_SLAM3 Pangolin OpenCV)
+
+
 add_executable(stereo
   src/stereo/stereo.cpp
   src/stereo/stereo-slam-node.cpp
 )
 ament_target_dependencies(stereo rclcpp sensor_msgs cv_bridge message_filters ORB_SLAM3 Pangolin OpenCV)
 
+add_executable(stereo-new
+  src/stereo-new/stereo-new.cpp
+  src/stereo-new/stereo-new-slam-node.cpp
+)
+ament_target_dependencies(stereo-new rclcpp sensor_msgs nav_msgs geometry_msgs tf2 tf2_ros cv_bridge message_filters ORB_SLAM3 Pangolin OpenCV)
+
 add_executable(stereo-inertial
   src/stereo-inertial/stereo-inertial.cpp
   src/stereo-inertial/stereo-inertial-node.cpp
 )
-ament_target_dependencies(stereo-inertial rclcpp sensor_msgs cv_bridge ORB_SLAM3 Pangolin OpenCV)
+ament_target_dependencies(stereo-inertial rclcpp sensor_msgs nav_msgs geometry_msgs tf2 tf2_ros cv_bridge ORB_SLAM3 Pangolin OpenCV)
 
-install(TARGETS mono rgbd stereo stereo-inertial DESTINATION lib/${PROJECT_NAME})
+install(TARGETS mono mono-inertial rgbd rgbd-inertial stereo stereo-new stereo-inertial DESTINATION lib/${PROJECT_NAME})
 
 # Install launch files.
 #install(DIRECTORY launch config vocabulary

@@ -1,0 +1,172 @@
+%YAML:1.0
+
+#--------------------------------------------------------------------------------------------
+# Camera Parameters. Adjust them!
+#--------------------------------------------------------------------------------------------
+Camera.type: "PinHole"
+
+# Camera calibration and distortion parameters (OpenCV) (equal for both cameras after stereo rectification)
+Camera.fx: 7.7537235550066748e+02
+Camera.fy: 7.7537235550066748e+02
+Camera.cx: 6.1947309112548828e+02
+Camera.cy: 2.5718049049377441e+02
+
+Camera.k1: 0.0
+Camera.k2: 0.0
+Camera.p1: 0.0
+Camera.p2: 0.0
+
+Camera.width: 1280
+Camera.height: 560
+
+# Camera frames per second 
+Camera.fps: 10.0
+
+# stereo baseline times fx
+Camera.bf: 3.6841758740842312e+02
+
+# Color order of the images (0: BGR, 1: RGB. It is ignored if images are grayscale)
+Camera.RGB: 1
+
+# Close/Far threshold. Baseline times.
+ThDepth: 45.0 # 35
+
+# Transformation from camera 0 to body-frame (imu)
+Tbc: !!opencv-matrix
+   rows: 4
+   cols: 4
+   dt: f
+   # data: [-0.00680505, -0.99997664, -0.00023038, 0.188937,
+   #        -0.01532162, 0.00033463, -0.99988212, 1.609005,
+   #        0.999869, -0.00680072, -0.01532356, 0.083782,
+   #        0.0, 0.0, 0.0, 1.0]   
+
+   # [[-6.80997811e-03, -1.53200103e-02,  9.99859451e-01],
+   #      [-9.99976785e-01,  3.34308951e-04, -6.80565493e-03],
+   #      [-2.29999261e-04, -9.99882586e-01, -1.53219313e-02]]    
+
+   data: [-6.80997811e-03,-1.53200103e-02,9.99859451e-01,1.71239,
+          -9.99976785e-01,3.34308951e-04,-6.80565493e-03,0.24740,
+          -2.29999261e-04,-9.99882586e-01,-1.53219313e-02,-0.11589,
+          0.0, 0.0, 0.0, 1.0]
+   # data: [-0.00680505, 0.99997682, 0.000230383, -0.05783135,
+   #        -0.01532165, -0.000334628, 0.99988256, 0.18896373,
+   #        0.99985946, 0.00680073, 0.01532357, 1.61014365,
+   #        0.0, 0.0, 0.0, 1.0]
+   # data: [-0.0068003, -0.9999769, -0.0002354, -0.05783135,
+   #        -0.0153170,  0.0003396, -0.9998826, 0.18896373,
+   #        0.9998596, -0.0067959, -0.0153190, 1.61014365,
+   #        0.0, 0.0, 0.0, 1.0]
+
+
+
+
+
+# [[-6.80997811e-03, -1.53200396e-02,  9.99859522e-01,
+#          1.71239000e+00],
+#        [-9.99976785e-01,  3.30000854e-04, -6.79992874e-03,
+#          2.47400000e-01],
+#        [-2.29999261e-04, -9.99882587e-01, -1.53198395e-02,
+#         -1.15890000e-01],
+#        [ 0.00000000e+00,  0.00000000e+00,  0.00000000e+00,
+#          1.00000000e+00]]
+
+
+# IMU noise
+IMU.NoiseGyro: 0.001 # 1.6968e-04 # rad/s^0.5
+IMU.NoiseAcc: 0.005 # 2.0000e-3 # m/s^1.5
+IMU.GyroWalk: 0.000175 # rad/s^1.5
+IMU.AccWalk: 0.0005886 # m/s^2.5
+IMU.Frequency: 100
+
+#--------------------------------------------------------------------------------------------
+# Stereo Rectification. Only if you need to pre-rectify the images.
+# Camera.fx, .fy, etc must be the same as in LEFT.P
+#--------------------------------------------------------------------------------------------
+LEFT.height: 560
+LEFT.width: 1280
+LEFT.D: !!opencv-matrix
+   rows: 1
+   cols: 5
+   dt: d
+   data: [ -5.6143027800000002e-02, 1.3952563200000001e-01, -1.2155906999999999e-03, -9.7281389999999998e-04, -8.0878168799999997e-02 ]
+LEFT.K: !!opencv-matrix
+   rows: 3
+   cols: 3
+   dt: d
+   data: [ 8.1690378992770002e+02, 5.0510166700000003e-01, 6.0850726281690004e+02, 0., 8.1156803828490001e+02, 2.6347599764440002e+02, 0., 0., 1. ]
+LEFT.R:  !!opencv-matrix
+   rows: 3
+   cols: 3
+   dt: d
+   data: [ 9.9996942080938533e-01, 3.6208456669806118e-04, -7.8119357978017733e-03, -3.4412461339106772e-04, 9.9999729518344416e-01, 2.3002617343453663e-03, 7.8127475572218850e-03, -2.2975031148170580e-03, 9.9996684067775188e-01 ]
+LEFT.Rf:  !!opencv-matrix
+   rows: 3
+   cols: 3
+   dt: f
+   data: [ 9.9996942080938533e-01, 3.6208456669806118e-04, -7.8119357978017733e-03, -3.4412461339106772e-04, 9.9999729518344416e-01, 2.3002617343453663e-03, 7.8127475572218850e-03, -2.2975031148170580e-03, 9.9996684067775188e-01 ]
+LEFT.P:  !!opencv-matrix
+   rows: 3
+   cols: 4
+   dt: d
+   data: [ 7.7537235550066748e+02, 0., 6.1947309112548828e+02, 0., 0., 7.7537235550066748e+02, 2.5718049049377441e+02, 0., 0., 0., 1., 0.]
+
+RIGHT.height: 560
+RIGHT.width: 1280
+RIGHT.D: !!opencv-matrix
+   rows: 1
+   cols: 5
+   dt: d
+   data: [ -5.4921981799999998e-02, 1.4243657430000001e-01, 7.5412299999999996e-05, -6.7560530000000001e-04, -8.5665408299999996e-02 ]
+RIGHT.K: !!opencv-matrix
+   rows: 3
+   cols: 3
+   dt: d
+   data: [8.1378205539589999e+02, 3.4880336220000002e-01, 6.1386419539320002e+02, 0., 8.0852165574269998e+02, 2.4941049348650000e+02, 0., 0., 1.]
+RIGHT.R:  !!opencv-matrix
+   rows: 3
+   cols: 3
+   dt: d
+   data: [ 9.9998812489422739e-01, 2.4089155522231892e-03, -4.2364131513853301e-03, -2.4186483057924992e-03, 9.9999444433315865e-01, -2.2937835970734117e-03, 4.2308640843048539e-03, 2.3040027516418276e-03, 9.9998839561287933e-01 ]
+RIGHT.P:  !!opencv-matrix
+   rows: 3
+   cols: 4
+   dt: d
+   data: [ 7.7537235550066748e+02, 0., 6.1947309112548828e+02, -3.6841758740842312e+02, 0., 7.7537235550066748e+02, 2.5718049049377441e+02, 0., 0., 0., 1., 0. ]
+
+#--------------------------------------------------------------------------------------------
+# ORB Parameters
+#--------------------------------------------------------------------------------------------
+
+# ORB Extractor: Number of features per image
+ORBextractor.nFeatures: 1750
+
+# ORB Extractor: Scale factor between levels in the scale pyramid 	
+ORBextractor.scaleFactor: 1.25
+
+# ORB Extractor: Number of levels in the scale pyramid	
+ORBextractor.nLevels: 8
+
+# ORB Extractor: Fast threshold
+# Image is divided in a grid. At each cell FAST are extracted imposing a minimum response.
+# Firstly we impose iniThFAST. If no corners are detected we impose a lower value minThFAST
+# You can lower these values if your images have low contrast			
+ORBextractor.iniThFAST: 20
+ORBextractor.minThFAST: 7
+
+#--------------------------------------------------------------------------------------------
+# Viewer Parameters
+#--------------------------------------------------------------------------------------------
+Viewer.KeyFrameSize: 0.05
+Viewer.KeyFrameLineWidth: 1
+Viewer.GraphLineWidth: 0.9
+Viewer.PointSize: 2
+Viewer.CameraSize: 0.08
+Viewer.CameraLineWidth: 3
+Viewer.ViewpointX: 0
+Viewer.ViewpointY: -0.7
+Viewer.ViewpointZ: -1.8
+Viewer.ViewpointF: 500
+
+# System.LoadAtlasFromFile: "/home/peterstone/Datasets/map/urban26"
+# System.SaveAtlasToFile: "/home/peterstone/Datasets/map/urban26.txt"
