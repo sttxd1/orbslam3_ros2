@@ -1,4 +1,4 @@
-#include "stereo-inertial-node.hpp"
+#include "stereo-inertial-gps-node.hpp"
 
 #include <opencv2/core/core.hpp>
 #include <WGS84toCartesian.hpp>
@@ -7,7 +7,7 @@
 using std::placeholders::_1;
 Sophus::SE3f Tc0w = Sophus::SE3f();
 
-StereoInertialNode::StereoInertialNode(ORB_SLAM3::System *SLAM, const string &strSettingsFile, const string &strDoRectify, const string &strDoEqual) :
+StereoInertialGPSNode::StereoInertialGPSNode(ORB_SLAM3::System *SLAM, const string &strSettingsFile, const string &strDoRectify, const string &strDoEqual) :
     Node("ORB_SLAM3_ROS2"),
     SLAM_(SLAM)
 {
@@ -65,15 +65,15 @@ StereoInertialNode::StereoInertialNode(ORB_SLAM3::System *SLAM, const string &st
     // subImgLeft_ = this->create_subscription<ImageMsg>("/stereo/left/image_raw", 100, std::bind(&StereoInertialNode::GrabImageLeft, this, _1));
     // subImgRight_ = this->create_subscription<ImageMsg>("/stereo/right/image_raw", 100, std::bind(&StereoInertialNode::GrabImageRight, this, _1));
 
-    syncThread_ = new std::thread(&StereoInertialNode::SyncWithImu, this);
+    syncThread_ = new std::thread(&StereoInertialGPSNode::SyncWithImu, this);
 }
 
-StereoInertialNode::~StereoInertialNode()
+StereoInertialGPSNode::~StereoInertialGPSNode()
 {
     RCLCPP_INFO(this->get_logger(), "Stop this node.");
     // Delete sync thread
-    // syncThread_->join();
-    // delete syncThread_;
+    syncThread_->join();
+    delete syncThread_;
 
     // Stop all threads
     SLAM_->Shutdown();
@@ -81,16 +81,16 @@ StereoInertialNode::~StereoInertialNode()
     // Save camera trajectory
     SLAM_->SaveKeyFrameTrajectoryTUM("/home/peterstone/Datasets/map/KeyFrameTrajectory.txt");
 
-    syncThread_->join();
-    delete syncThread_;
+    // syncThread_->join();
+    // delete syncThread_;
     RCLCPP_INFO(this->get_logger(), "Done.");
 }
 
-void StereoInertialNode::initial(){
-    subImu_ = this->create_subscription<ImuMsg>("/imu/data_raw", 1000, std::bind(&StereoInertialNode::GrabImu, this, _1));
-    subImgLeft_ = this->create_subscription<ImageMsg>("/stereo/left/image_raw", 100, std::bind(&StereoInertialNode::GrabImageLeft, this, _1));
-    subImgRight_ = this->create_subscription<ImageMsg>("/stereo/right/image_raw", 100, std::bind(&StereoInertialNode::GrabImageRight, this, _1));
-    gps_publisher = this->create_subscription<GPSMsg>("/gps/fix", 100, std::bind(&StereoInertialNode::GrabGPS, this, _1));
+void StereoInertialGPSNode::initial(){
+    subImu_ = this->create_subscription<ImuMsg>("/imu/data_raw", 1000, std::bind(&StereoInertialGPSNode::GrabImu, this, _1));
+    subImgLeft_ = this->create_subscription<ImageMsg>("/stereo/left/image_raw", 100, std::bind(&StereoInertialGPSNode::GrabImageLeft, this, _1));
+    subImgRight_ = this->create_subscription<ImageMsg>("/stereo/right/image_raw", 100, std::bind(&StereoInertialGPSNode::GrabImageRight, this, _1));
+    gps_publisher = this->create_subscription<GPSMsg>("/gps/fix", 100, std::bind(&StereoInertialGPSNode::GrabGPS, this, _1));
 
 
     odom_publisher = this->create_publisher<OdomMsg>("/orbslam3/odom", 10);
@@ -98,42 +98,68 @@ void StereoInertialNode::initial(){
     gps_path_publisher = this->create_publisher<PathMsg>("/orbslam3/gps_path", 10);
     camera_pose_publisher = this->create_publisher<PoseStampedMsg>("/orbslam3/camera_pose", 10);
     // body_pose_publisher = this->create_publisher<TfPoseStampedMsg>("/orbslam3/body_pose", 10);
-    tracked_point_cloud_publisher = this->create_publisher<PointCloud2Msg>("/orbslam3/tracked_pc", 10);
-    all_point_cloud_publisher = this->create_publisher<PointCloud2Msg>("/orbslam3/all_pc", 10);
+    tracked_point_cloud_publisher = this->create_publisher<PointCloud2Msg>("/orbslam3/tracked_pc", 100);
+    all_point_cloud_publisher = this->create_publisher<PointCloud2Msg>("/orbslam3/all_pc", 100);
     // key_markers_publisher = this->create_publisher<MarkerMsg>("/orbslam3/kf_markers", 10);
 
-    local2cammap_static_broadcaster = std::make_shared<tf2_ros::StaticTransformBroadcaster>(this);
-    cam2body_static_broadcaster = std::make_shared<tf2_ros::StaticTransformBroadcaster>(this);
-    cammap2cam_broadcaster = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
-    local2enu_broadcaster = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
+    world2orbmap_static_broadcaster = std::make_shared<tf2_ros::StaticTransformBroadcaster>(this);
+    orb2body_static_broadcaster = std::make_shared<tf2_ros::StaticTransformBroadcaster>(this);
+    body2gps_static_broadcaster = std::make_shared<tf2_ros::StaticTransformBroadcaster>(this);
+    world2enu_static_broadcaster = std::make_shared<tf2_ros::StaticTransformBroadcaster>(this);
+    orbmap2orb_broadcaster = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
+    gps2enu_broadcaster = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
 
-    Eigen::Vector3d local2cammap_position;
-    Eigen::Quaterniond local2cammap_orientation;
+    Eigen::Vector3d world2orbmap_position;
+    Eigen::Quaterniond world2orbmap_orientation;
 
-    local2cammap_position.x() = 0.0;
-    local2cammap_position.y() = 0.0;
-    local2cammap_position.z() = 0.0;
-    local2cammap_orientation.w() = 1.0;
-    local2cammap_orientation.x() = 0.0;
-    local2cammap_orientation.y() = 0.0;
-    local2cammap_orientation.z() = 0.0;
+    world2orbmap_position.x() = 0.0;
+    world2orbmap_position.y() = 0.0;
+    world2orbmap_position.z() = 0.0; 
+    world2orbmap_orientation.w() = std::sqrt(2.0)/2;
+    world2orbmap_orientation.x() = 0.0;
+    world2orbmap_orientation.y() = 0.0;
+    world2orbmap_orientation.z() = -std::sqrt(2.0)/2;
 
-    Eigen::Vector3d cam2body_position;
-    Eigen::Quaterniond cam2body_orientation;
+    Eigen::Vector3d orb2body_position;
+    Eigen::Quaterniond orb2body_orientation;
 
-    cam2body_position.x() = 0.0;
-    cam2body_position.y() = 0.0;
-    cam2body_position.z() = 0.0;
-    cam2body_orientation.w() = 1.0;
-    cam2body_orientation.x() = 0.0;
-    cam2body_orientation.y() = 0.0;
-    cam2body_orientation.z() = 0.0;
+    orb2body_position.x() = 0.0;
+    orb2body_position.y() = 0.0;
+    orb2body_position.z() = 0.0;
+    orb2body_orientation.w() = 0.5;
+    orb2body_orientation.x() = 0.5;
+    orb2body_orientation.y() = -0.5;
+    orb2body_orientation.z() = 0.5;
 
-    this->TF_Static_Broadcaster(local2cammap_static_broadcaster, "local_frame", "camera_map_frame", local2cammap_position, local2cammap_orientation);
-    this->TF_Static_Broadcaster(cam2body_static_broadcaster, "camera_frame", "body_frame", cam2body_position, cam2body_orientation);
+    Eigen::Vector3d world2enu_position;
+    Eigen::Quaterniond world2enu_orientation;
+
+    world2enu_position.x() = 0.0;
+    world2enu_position.y() = 0.0;
+    world2enu_position.z() = 0.0;
+    world2enu_orientation.w() = 0.0;
+    world2enu_orientation.x() = 0.0;
+    world2enu_orientation.y() = 0.0;
+    world2enu_orientation.z() = 1.0;
+
+    // Eigen::Vector3d body2gps_position;
+    // Eigen::Quaterniond body2gps_orientation;
+
+    // body2gps_position.x() = 0.0;
+    // body2gps_position.y() = 0.0;
+    // body2gps_position.z() = 25.0;
+    // body2gps_orientation.w() = 1.0;
+    // body2gps_orientation.x() = 0.0;
+    // body2gps_orientation.y() = 0.0;
+    // body2gps_orientation.z() = 0.0;
+
+    this->TF_Static_Broadcaster(world2orbmap_static_broadcaster, "world_frame", "orb_map_frame", world2orbmap_position, world2orbmap_orientation);
+    this->TF_Static_Broadcaster(orb2body_static_broadcaster, "orb_frame", "body_frame", orb2body_position, orb2body_orientation);
+    // this->TF_Static_Broadcaster(body2gps_static_broadcaster, "body_frame", "gps_frame", body2gps_position, body2gps_orientation);
+    this->TF_Static_Broadcaster(world2enu_static_broadcaster, "world_frame", "enu_frame", world2enu_position, world2enu_orientation);
 }   
 
-void StereoInertialNode::TF_Static_Broadcaster(std::shared_ptr<tf2_ros::StaticTransformBroadcaster> name,std::string frame_id, std::string child_frame_id, Eigen::Vector3d position, Eigen::Quaterniond quaternion){
+void StereoInertialGPSNode::TF_Static_Broadcaster(std::shared_ptr<tf2_ros::StaticTransformBroadcaster> name,std::string frame_id, std::string child_frame_id, Eigen::Vector3d position, Eigen::Quaterniond quaternion){
     geometry_msgs::msg::TransformStamped static_transform;
     static_transform.header.stamp = this->get_clock()->now();
     static_transform.header.frame_id = frame_id;  // Parent frame
@@ -148,14 +174,14 @@ void StereoInertialNode::TF_Static_Broadcaster(std::shared_ptr<tf2_ros::StaticTr
     name->sendTransform(static_transform);
 }
 
-void StereoInertialNode::GrabImu(const ImuMsg::SharedPtr msg)
+void StereoInertialGPSNode::GrabImu(const ImuMsg::SharedPtr msg)
 {
     bufMutex_.lock();
     imuBuf_.push(msg);
     bufMutex_.unlock();
 }
 
-void StereoInertialNode::GrabImageLeft(const ImageMsg::SharedPtr msgLeft)
+void StereoInertialGPSNode::GrabImageLeft(const ImageMsg::SharedPtr msgLeft)
 {
     bufMutexLeft_.lock();
 
@@ -166,7 +192,7 @@ void StereoInertialNode::GrabImageLeft(const ImageMsg::SharedPtr msgLeft)
     bufMutexLeft_.unlock();
 }
 
-void StereoInertialNode::GrabImageRight(const ImageMsg::SharedPtr msgRight)
+void StereoInertialGPSNode::GrabImageRight(const ImageMsg::SharedPtr msgRight)
 {
     bufMutexRight_.lock();
 
@@ -177,18 +203,17 @@ void StereoInertialNode::GrabImageRight(const ImageMsg::SharedPtr msgRight)
     bufMutexRight_.unlock();
 }
 
-void StereoInertialNode::GrabGPS(const GPSMsg::SharedPtr GPSmsg){
+void StereoInertialGPSNode::GrabGPS(const GPSMsg::SharedPtr GPSmsg){
     num_GPS_msg = num_GPS_msg + 1;
     double ENU_x, ENU_y, ENU_z;
-    TfPoseStampedMsg local2enu_pose_msg;
+    TfPoseStampedMsg gps2enu_pose_msg;
     PoseStampedMsg temp_msg;
-
 
     if (num_GPS_msg == 1) {
         ENU_origin[0] = GPSmsg->latitude;
         ENU_origin[1] = GPSmsg->longitude;
         ENU_height = GPSmsg->altitude;
-        GPS_inital = false;
+        // GPS_inital = false;
     } else {
         std::array<double, 2> temp;
         temp[0] = GPSmsg->latitude;
@@ -197,29 +222,43 @@ void StereoInertialNode::GrabGPS(const GPSMsg::SharedPtr GPSmsg){
         ENU_x = ENU_xy[0];
         ENU_y = ENU_xy[1];
         ENU_z = GPSmsg->altitude - ENU_height;
-        local2enu_pose_msg.header.frame_id = "local_frame";
-        local2enu_pose_msg.child_frame_id = "gps_frame";
-        local2enu_pose_msg.header.stamp = GPSmsg->header.stamp;
-        local2enu_pose_msg.transform.translation.x = ENU_y;
-        local2enu_pose_msg.transform.translation.y = -ENU_x;
-        local2enu_pose_msg.transform.translation.z = ENU_z;
-        local2enu_broadcaster->sendTransform(local2enu_pose_msg);
+        gps2enu_pose_msg.header.frame_id = "enu_frame";
+        gps2enu_pose_msg.child_frame_id = "gps_frame";
+        gps2enu_pose_msg.header.stamp = GPSmsg->header.stamp;
+        gps2enu_pose_msg.transform.translation.x = ENU_x;
+        gps2enu_pose_msg.transform.translation.y = ENU_y;
+        gps2enu_pose_msg.transform.translation.z = ENU_z;
+        gps2enu_broadcaster->sendTransform(gps2enu_pose_msg);
 
         temp_msg.header.frame_id = "gps_frame";
         temp_msg.header.stamp = GPSmsg->header.stamp;
-        temp_msg.pose.position.x = ENU_y;
-        temp_msg.pose.position.y = -ENU_x;
+        // temp_msg.pose.position.x = ENU_y;
+        // temp_msg.pose.position.y = -ENU_x;
+        // temp_msg.pose.position.z = ENU_z;
+        temp_msg.pose.position.x = ENU_x;
+        temp_msg.pose.position.y = ENU_y;
         temp_msg.pose.position.z = ENU_z;
 
+        // GPSmsg_new->header.stamp = GPSmsg->header.stamp;
+        GPSmsg->latitude = ENU_y;
+        GPSmsg->longitude = -ENU_x;
+        GPSmsg->altitude = ENU_z;
 
-        GPS_path_msg.header.frame_id = "local_frame";
+
+        GPS_path_msg.header.frame_id = "enu_frame";
         GPS_path_msg.header.stamp = GPSmsg->header.stamp;
         GPS_path_msg.poses.push_back(temp_msg);
         gps_path_publisher->publish(GPS_path_msg);
     }
+
+    bufMutexgps_.lock();
+    if (!gpsBuf_.empty())
+        gpsBuf_.pop();
+    gpsBuf_.push(GPSmsg);
+    bufMutexgps_.unlock();
 }
 
-cv::Mat StereoInertialNode::GetImage(const ImageMsg::SharedPtr msg)
+cv::Mat StereoInertialGPSNode::GetImage(const ImageMsg::SharedPtr msg)
 {
     // Copy the ros image message to cv::Mat.
     cv_bridge::CvImageConstPtr cv_ptr;
@@ -244,21 +283,22 @@ cv::Mat StereoInertialNode::GetImage(const ImageMsg::SharedPtr msg)
     }
 }
 
-void StereoInertialNode::SyncWithImu()
+void StereoInertialGPSNode::SyncWithImu()
 {
     const double maxTimeDiff = 0.1;
 
     while (1)
     {
         cv::Mat imLeft, imRight, imRight_new, imLeft_new;
-        double tImLeft = 0, tImRight = 0;
+        double tImLeft = 0, tImRight = 0, tGPS = -1;
+        // RCLCPP_INFO(this->get_logger(), "Hello0");
         if (!imgLeftBuf_.empty() && !imgRightBuf_.empty() && !imuBuf_.empty())
         {
             // tImLeft = Utility::StampToSec(imgLeftBuf_.front()->header.stamp);
             rclcpp::Time msg_time = imgLeftBuf_.front()->header.stamp;
             tImLeft = Utility::StampToSec(msg_time);
             tImRight = Utility::StampToSec(imgRightBuf_.front()->header.stamp);
-
+            
             bufMutexRight_.lock();
             while ((tImLeft - tImRight) > maxTimeDiff && imgRightBuf_.size() > 1)
             {
@@ -282,9 +322,9 @@ void StereoInertialNode::SyncWithImu()
                 std::cout << "big time difference" << std::endl;
                 continue;
             }
+            
             if (tImLeft > Utility::StampToSec(imuBuf_.back()->header.stamp))
                 continue;
-
 
             bufMutexLeft_.lock();
             imLeft = GetImage(imgLeftBuf_.front());
@@ -297,6 +337,8 @@ void StereoInertialNode::SyncWithImu()
             bufMutexRight_.unlock();
 
             vector<ORB_SLAM3::IMU::Point> vImuMeas;
+            vector<ORB_SLAM3::GPS::Data> vGPS;
+            
             bufMutex_.lock();
             if (!imuBuf_.empty())
             {
@@ -312,6 +354,21 @@ void StereoInertialNode::SyncWithImu()
                 }
             }
             bufMutex_.unlock();
+            float gpsx = -1, gpsy = -1;
+            bufMutexgps_.lock();
+            if(!gpsBuf_.empty()){
+                tGPS = Utility::StampToSec(gpsBuf_.front()->header.stamp);
+                // TO BE CHANGED
+                if(tImLeft - tGPS < 0.1 && tImLeft > tGPS) {
+                    vGPS.clear();
+                    vGPS.push_back(ORB_SLAM3::GPS::Data(gpsBuf_.front()->latitude, gpsBuf_.front()->longitude, gpsBuf_.front()->altitude, Utility::StampToSec(gpsBuf_.front()->header.stamp)));
+                    gpsx = gpsBuf_.front()->latitude;
+                    gpsy = gpsBuf_.front()->longitude;
+                    gpsBuf_.pop(); 
+                }
+            }
+            bufMutexgps_.unlock();
+
 
             if (bClahe_)
             {
@@ -325,10 +382,12 @@ void StereoInertialNode::SyncWithImu()
                 cv::remap(imRight, imRight_new, M1r_, M2r_, cv::INTER_LINEAR);
             }
 
-            Sophus::SE3f Tcc0 = SLAM_->TrackStereo(imLeft_new, imRight_new, tImLeft, vImuMeas);
-
+            // RCLCPP_INFO(this->get_logger(), "Stereo: %f, GPS time: %f", tImLeft, tGPS);
+            Sophus::SE3f Tcc0 = SLAM_->TrackStereoGPS(imLeft_new, imRight_new, tImLeft, vImuMeas, vGPS);
+            // RCLCPP_INFO(this->get_logger(), "Hello2");
             Sophus::SE3f Twc = (Tcc0 * Tc0w).inverse();
 
+            RCLCPP_INFO(this->get_logger(), "x: %f, y: %f, gpsx: %f, gpsy: %f", Twc.translation().x(), Twc.translation().y(), gpsx, gpsy);
             this->Publish_Camera_Pose(Twc, msg_time);
             this->Pulish_Feature_Points(SLAM_->GetTrackedMapPoints(), msg_time);
             this->Pulish_All_Feature_Points(SLAM_->GetAllMapPoints(), msg_time);
@@ -340,24 +399,24 @@ void StereoInertialNode::SyncWithImu()
     }
 }
 
-void StereoInertialNode::Publish_Camera_Pose(Sophus::SE3f Twc_SE3f, rclcpp::Time msg_time){
-    TfPoseStampedMsg cammap2cam_pose_msg;
+void StereoInertialGPSNode::Publish_Camera_Pose(Sophus::SE3f Twc_SE3f, rclcpp::Time msg_time){
+    TfPoseStampedMsg orbmap2orb_pose_msg;
     PoseStampedMsg temp_msg;
 
-    cammap2cam_pose_msg.header.frame_id = "camera_map_frame";
-    cammap2cam_pose_msg.child_frame_id = "camera_frame";
-    cammap2cam_pose_msg.header.stamp = msg_time;
+    orbmap2orb_pose_msg.header.frame_id = "orb_map_frame";
+    orbmap2orb_pose_msg.child_frame_id = "orb_frame";
+    orbmap2orb_pose_msg.header.stamp = msg_time;
 
-    cammap2cam_pose_msg.transform.translation.x = Twc_SE3f.translation().x();
-    cammap2cam_pose_msg.transform.translation.y = Twc_SE3f.translation().y();
-    cammap2cam_pose_msg.transform.translation.z = Twc_SE3f.translation().z();
+    orbmap2orb_pose_msg.transform.translation.x = Twc_SE3f.translation().x();
+    orbmap2orb_pose_msg.transform.translation.y = Twc_SE3f.translation().y();
+    orbmap2orb_pose_msg.transform.translation.z = Twc_SE3f.translation().z();
 
-    cammap2cam_pose_msg.transform.rotation.w = Twc_SE3f.unit_quaternion().coeffs().w();
-    cammap2cam_pose_msg.transform.rotation.x = Twc_SE3f.unit_quaternion().coeffs().x();
-    cammap2cam_pose_msg.transform.rotation.y = Twc_SE3f.unit_quaternion().coeffs().y();
-    cammap2cam_pose_msg.transform.rotation.z = Twc_SE3f.unit_quaternion().coeffs().z();
+    orbmap2orb_pose_msg.transform.rotation.w = Twc_SE3f.unit_quaternion().coeffs().w();
+    orbmap2orb_pose_msg.transform.rotation.x = Twc_SE3f.unit_quaternion().coeffs().x();
+    orbmap2orb_pose_msg.transform.rotation.y = Twc_SE3f.unit_quaternion().coeffs().y();
+    orbmap2orb_pose_msg.transform.rotation.z = Twc_SE3f.unit_quaternion().coeffs().z();
 
-    temp_msg.header.frame_id = "camera_map_frame";
+    temp_msg.header.frame_id = "orb_map_frame";
     // temp_msg.header.stamp = msg_time;
 
     temp_msg.pose.position.x = Twc_SE3f.translation().x();
@@ -369,35 +428,35 @@ void StereoInertialNode::Publish_Camera_Pose(Sophus::SE3f Twc_SE3f, rclcpp::Time
     temp_msg.pose.orientation.y = Twc_SE3f.unit_quaternion().coeffs().y();
     temp_msg.pose.orientation.z = Twc_SE3f.unit_quaternion().coeffs().z();
 
-    cammap2cam_broadcaster->sendTransform(cammap2cam_pose_msg);
+    orbmap2orb_broadcaster->sendTransform(orbmap2orb_pose_msg);
 
-    cammap_path_msg.header.frame_id = "camera_map_frame";
-    cammap_path_msg.header.stamp = msg_time;
-    cammap_path_msg.poses.push_back(temp_msg);
-
+    orb_path_msg.header.frame_id = "orb_map_frame";
+    orb_path_msg.header.stamp = msg_time;
+    orb_path_msg.poses.push_back(temp_msg);
+ 
     camera_pose_publisher->publish(temp_msg);
 
-    path_publisher->publish(cammap_path_msg);
+    path_publisher->publish(orb_path_msg);
 }
 
-void StereoInertialNode::Pulish_All_Feature_Points(std::vector<ORB_SLAM3::MapPoint*> feature_points, rclcpp::Time msg_time){
+void StereoInertialGPSNode::Pulish_All_Feature_Points(std::vector<ORB_SLAM3::MapPoint*> feature_points, rclcpp::Time msg_time){
     PointCloud2Msg pointcloud = Feature_Points_to_Point_cloud(feature_points, msg_time);
     all_point_cloud_publisher->publish(pointcloud);
 }
 
-void StereoInertialNode::Pulish_Feature_Points(std::vector<ORB_SLAM3::MapPoint*> feature_points, rclcpp::Time msg_time){
+void StereoInertialGPSNode::Pulish_Feature_Points(std::vector<ORB_SLAM3::MapPoint*> feature_points, rclcpp::Time msg_time){
     PointCloud2Msg pointcloud = Feature_Points_to_Point_cloud(feature_points, msg_time);
     tracked_point_cloud_publisher->publish(pointcloud);
 }
 
-sensor_msgs::msg::PointCloud2 StereoInertialNode::Feature_Points_to_Point_cloud(std::vector<ORB_SLAM3::MapPoint*> feature_points, rclcpp::Time msg_time){
+sensor_msgs::msg::PointCloud2 StereoInertialGPSNode::Feature_Points_to_Point_cloud(std::vector<ORB_SLAM3::MapPoint*> feature_points, rclcpp::Time msg_time){
     const int num_channels = 3;
     if (feature_points.size() == 0){
         RCLCPP_INFO(this->get_logger(), "Empty feature points.");
     }
 
     sensor_msgs::msg::PointCloud2 point_cloud2;
-    point_cloud2.header.frame_id = "camera_map_frame";
+    point_cloud2.header.frame_id = "orb_map_frame";
     point_cloud2.header.stamp = msg_time;
     point_cloud2.height = 1;
     point_cloud2.width = feature_points.size();
@@ -439,9 +498,9 @@ sensor_msgs::msg::PointCloud2 StereoInertialNode::Feature_Points_to_Point_cloud(
             tf2::Vector3 point_translation(pMPw.x(), pMPw.y(), pMPw.z());
 
             float data_array[num_channels] = {
-                point_translation.x(),
-                point_translation.y(),
-                point_translation.z()
+                static_cast<float>(point_translation.x()),
+                static_cast<float>(point_translation.y()),
+                static_cast<float>(point_translation.z())
             };
 
             // Copying point data into the cloud data buffer at the correct offset

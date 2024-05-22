@@ -80,7 +80,13 @@ add_executable(stereo-inertial
 )
 ament_target_dependencies(stereo-inertial rclcpp sensor_msgs nav_msgs geometry_msgs tf2 tf2_ros cv_bridge ORB_SLAM3 Pangolin OpenCV)
 
-install(TARGETS mono mono-inertial rgbd rgbd-inertial stereo stereo-new stereo-inertial DESTINATION lib/${PROJECT_NAME})
+add_executable(stereo-gps
+  src/stereo-inertial-gps/stereo-inertial-gps.cpp
+  src/stereo-inertial-gps/stereo-inertial-gps-node.cpp
+)
+ament_target_dependencies(stereo-gps rclcpp sensor_msgs nav_msgs geometry_msgs tf2 tf2_ros cv_bridge ORB_SLAM3 Pangolin OpenCV)
+
+install(TARGETS mono mono-inertial rgbd rgbd-inertial stereo stereo-gps stereo-new stereo-inertial DESTINATION lib/${PROJECT_NAME})
 
 # Install launch files.
 #install(DIRECTORY launch config vocabulary
